@@ -135,7 +135,7 @@ app.post('/signup', (req, res) => {
         verificationToken.save()
           .then(() => {
             // Send a verification email
-            const verificationLink = `https://kopyrightit.onrender.com//verify-email?email=${email}&token=${token}`;
+            const verificationLink = `https://kopyrightit.onrender.com/verify-email?email=${email}&token=${token}`;
             const mailOptions = {
               from: 'lahadeepkumar@gmail.com',
               to: email,
@@ -205,7 +205,7 @@ app.post('/api/send-reset-email', async (req, res) => {
   const token = crypto.randomBytes(20).toString('hex');
 
   // Create a reset link with token
-  const resetLink = `https://kopyrightit.onrender.com//forgotpassword?token=${token}&email=${email}`;
+  const resetLink = `https://kopyrightit.onrender.com/forgotpassword?token=${token}&email=${email}`;
 
   const mailOptions = {
     from: 'lahadeepkumar@gmail.com',
