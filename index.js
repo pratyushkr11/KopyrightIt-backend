@@ -111,14 +111,7 @@ app.post("/google-login", (req, res) => {
 
 // Signup endpoint
 app.post('/signup', (req, res) => {
-  const { name, email, password } = req.body;
-
-  // Usermodel.findOne({ email: email })
-  // .then(user => {
-  //   return res.status(401).json({ error: 'Error' });
-  // })
-  // Generate a unique verification token
-  const token = crypto.randomBytes(20).toString('hex');
+  const { name, email, password,isVerified } = req.body;
 
   // Hash the password using bcrypt
   bcrypt.hash(password, 10, (err, hashedPassword) => {
@@ -127,35 +120,10 @@ app.post('/signup', (req, res) => {
     }
 
     // Create a new user with the hashed password
-    const user = new Usermodel({ name, email, password: hashedPassword, isVerified: false });
+    const user = new Usermodel({ name, email, password: hashedPassword, isVerified });
     user.save()
       .then(() => {
-        // Store the verification token in MongoDB
-        const verificationToken = new Token({ email, token });
-        verificationToken.save()
-          .then(() => {
-            // Send a verification email
-            const verificationLink = `https://kopyrightit.onrender.com/verify-email?email=${email}&token=${token}`;
-            const mailOptions = {
-              from: 'lahadeepkumar@gmail.com',
-              to: email,
-              subject: 'Email Verification',
-              text: `Click this link to verify your email: ${verificationLink}`,
-            };
-
-            transporter.sendMail(mailOptions, (error, info) => {
-              if (error) {
-                console.error('Email could not be sent:', error);
-              } else {
-                // console.log('Email sent:', info.response);
-              }
-            });
-
-            res.status(200).json({ message: 'User registered. Check your email for verification link.' });
-          })
-          .catch((err) => {
-            res.status(500).json({ error: 'Error storing the verification token' });
-          });
+        res.status(200).json({ message: 'Email verification successful' });
       })
       .catch((err) => {
         res.status(500).json({ error: 'Error creating the user' });
@@ -163,30 +131,70 @@ app.post('/signup', (req, res) => {
   });
 });
 
-// Verification endpoint
-app.post('/api/verify', async (req, res) => {
-  const { email, token } = req.body;
-  // console.log(email)
-  // console.log(token)
+
+// Endpoint to handle registration and send OTP email
+app.post('/sendotp', async (req, res) => {
+  const { email, generatedOTP } = req.body;
 
   try {
-    const foundToken = await Token.findOne({ email, token });
-    // Update the user's "verified" status in the database
+    const user = await Usermodel.findOne({ email: email });
 
-    if (foundToken) {
-      // The email and token are valid
-      // Delete the reset request from the database
-      await Usermodel.findOneAndUpdate({ email }, { isVerified: true });
-      await ResetRequest.deleteOne({ token });
-      // console.log("hrllo")
-      res.status(200).json({ message: 'Reset URL is valid' });
+    if (!user) {
+      // User not found, send OTP email
+      const mailOptions = {
+        from: 'lahadeepkumar@gmail.com',
+        to: email,
+        subject: 'OTP Verification',
+        text: `Here is your Register OTP for Kopuright: ${generatedOTP}`,
+      };
+
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+          
+          return res.status(500).json({ error: 'Failed to send email' });
+        } else {
+          return res.status(200).json({ message: 'Email sent successfully' });
+        }
+      });
     } else {
-      // Invalid or expired token
-      res.status(401).json({ message: 'Reset URL is invalid' });
+      // User found, return 500 error
+      return res.status(500).json({ error: 'User already exists' });
     }
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error verifying reset URL' });
+    
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Endpoint to handle registration and send OTP email
+app.post('/pass-reset/sendotp', async (req, res) => {
+  const { email, generatedOTP } = req.body;
+
+  try {
+    const user = await Usermodel.findOne({ email: email });
+
+    if (user) {
+      // User not found, send OTP email
+      const mailOptions = {
+        from: 'lahadeepkumar@gmail.com',
+        to: email,
+        subject: 'OTP Verification',
+        text: `Here is Passwrod Reset OTP for Kopuright: ${generatedOTP}`,
+      };
+
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+          return res.status(500).json({ error: 'Failed to send email' });
+        } else {
+          return res.status(200).json({ message: 'Email sent successfully' });
+        }
+      });
+    } else {
+      // User found, return 500 error
+      return res.status(500).json({ error: 'User not exists' });
+    }
+  } catch (error) {
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -197,55 +205,6 @@ const ResetRequest = mongoose.model('ResetRequest', {
   token: String,
 });
 
-// API to send a password reset email
-app.post('/api/send-reset-email', async (req, res) => {
-  const { email } = req.body;
-
-  // Generate a random token with crypto
-  const token = crypto.randomBytes(20).toString('hex');
-
-  // Create a reset link with token
-  const resetLink = `https://kopyrightit.onrender.com/forgotpassword?token=${token}&email=${email}`;
-
-  const mailOptions = {
-    from: 'lahadeepkumar@gmail.com',
-    to: email,
-    subject: 'Password Reset Request',
-    text: `Click the following link to reset your password: ${resetLink}`,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    const resetRequest = new ResetRequest({ email, token });
-    await resetRequest.save();
-    res.status(200).json({ message: 'Password reset email sent successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error sending reset email' });
-  }
-});
-
-// API to verify the reset URL
-app.post('/api/verify-reset-url', async (req, res) => {
-  const { token } = req.body;
-
-  try {
-    const resetRequest = await ResetRequest.findOne({ token });
-
-    if (resetRequest) {
-      // The email and token are valid
-      // Delete the reset request from the database
-      await ResetRequest.deleteOne({ token });
-      res.status(200).json({ message: 'Reset URL is valid' });
-    } else {
-      // Invalid or expired token
-      res.status(401).json({ message: 'Reset URL is invalid' });
-    }
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error verifying reset URL' });
-  }
-});
 
 
 // API to change the password
@@ -270,7 +229,6 @@ app.post('/api/change-password', async (req, res) => {
       res.status(401).json({ message: 'User not found' });
     }
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: 'Error changing password' });
   }
 });
@@ -315,7 +273,7 @@ app.post('/api/settings', async (req, res) => {
     await newSettings.save();
     res.status(201).json({ message: 'Settings saved successfully' });
   } catch (err) {
-    console.error('Error saving settings:', err);
+    // console.error('Error saving settings:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -334,7 +292,7 @@ app.get('/api/user/email/:userId', async (req, res) => {
 
     res.json({ email: user.email });
   } catch (err) {
-    console.error('Error fetching user email:', err);
+    // console.error('Error fetching user email:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -385,7 +343,7 @@ app.post('/api/sendEmail', async (req, res) => {
     // Send the emails
     transporter.sendMail(mailOptionsToUser, (errorToUser, infoToUser) => {
       if (errorToUser) {
-        console.error('Error sending email to user:', errorToUser);
+        // console.error('Error sending email to user:', errorToUser);
         // Handle the error for the user's email separately if needed
       } else {
         // console.log('Email sent to user:', infoToUser.response);
@@ -402,7 +360,7 @@ app.post('/api/sendEmail', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error processing email:', err);
+    // console.error('Error processing email:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -447,7 +405,7 @@ app.post("/saveUrls", async (req, res) => {
     // Respond with the ID of the saved record
     res.json({ id: savedRecord._id });
   } catch (error) {
-    console.error("Error saving data:", error);
+    // console.error("Error saving data:", error);
     res.status(500).send("Error saving data");
   }
 });
@@ -482,7 +440,7 @@ app.get('/getUploadUrl', async (req, res) => {
 
     res.json({ url, key: filename });
   } catch (error) {
-    console.error('Error generating S3 URL:', error);
+    // console.error('Error generating S3 URL:', error);
     res.status(500).json({ error: 'Error generating S3 URL' });
   }
 });
